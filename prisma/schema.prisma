@@ -1,0 +1,1156 @@
+// Orbit Private Care — Prisma schema
+// Migrated from the legacy PHP/MySQL `orbit_coaching` database (23 tables)
+// and extended with 5 new modules: Teachers, Live Classes, MCQ Exams,
+// CQ Exams and Teacher Evaluation.
+//
+// Design notes vs. the legacy schema:
+//  * Legacy stored `course` / `batch` / `teacher_name` as free-text VARCHARs.
+//    These are now real relations (Course -> Batch -> Enrollment, Teacher).
+//  * Legacy attendance was UNIQUE(student_id, date) with no course or teacher
+//    dimension. It is now AttendanceSession (batch + subject + teacher + date)
+//    with per-student AttendanceRecord rows, which is what makes course-wise,
+//    teacher-wise and monthly reporting possible.
+//  * Gallery categories were a hardcoded <select>. They are now a real table.
+//  * All file paths are cloud URLs (Vercel Blob), never local disk paths.
+//  * `legacyId` columns preserve the original MySQL primary keys so the data
+//    migration is idempotent and re-runnable.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  TEACHER
+  STUDENT
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum StudentStatus {
+  ACTIVE
+  INACTIVE
+  GRADUATED
+  DROPPED
+}
+
+enum TeacherStatus {
+  ACTIVE
+  INACTIVE
+  ON_LEAVE
+}
+
+enum AdmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum PaymentStatus {
+  PAID
+  UNPAID
+  PARTIAL
+}
+
+enum PaymentMethod {
+  CASH
+  BKASH
+  NAGAD
+  BANK
+  OTHER
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+enum DayOfWeek {
+  SATURDAY
+  SUNDAY
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+}
+
+enum ContentStatus {
+  ACTIVE
+  INACTIVE
+}
+
+/// Lifecycle shared by MCQ exams, CQ exams and live classes.
+enum PublishStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+  CANCELLED
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  AUTO_SUBMITTED
+  EVALUATED
+}
+
+/// The four parts of a Bangladeshi creative question.
+enum CQPartType {
+  KA // ক — Knowledge
+  KHA // খ — Understanding
+  GA // গ — Application
+  GHA // ঘ — Higher Order Thinking
+}
+
+enum MaterialType {
+  PDF
+  DOC
+  PPT
+  IMAGE
+  VIDEO
+  LINK
+  OTHER
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+}
+
+enum DeliveryStatus {
+  SENT
+  FAILED
+  PENDING
+}
+
+// ---------------------------------------------------------------------------
+// Auth — one User table for all three roles (NextAuth compatible)
+// ---------------------------------------------------------------------------
+
+/// Single identity table. Admins sign in with `email`, students with
+/// `username` (matching legacy `student_login`), teachers with either.
+/// Legacy bcrypt hashes from `admins.password_hash` and `student_login.password`
+/// verify as-is, so existing credentials keep working after migration.
+model User {
+  id           String    @id @default(cuid())
+  email        String?   @unique
+  username     String?   @unique
+  passwordHash String?
+  role         Role      @default(STUDENT)
+  name         String?
+  image        String?
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+
+  emailVerified DateTime?
+
+  student Student?
+  teacher Teacher?
+
+  accounts Account[]
+  sessions Session[]
+
+  // Audit trails — what this user created.
+  recordedPayments   Payment[]              @relation("PaymentRecordedBy")
+  uploadedMaterials  StudyMaterial[]        @relation("MaterialUploadedBy")
+  createdAssignments Assignment[]           @relation("AssignmentCreatedBy")
+  createdNotes       AdminNote[]            @relation("NoteCreatedBy")
+  gradedSubmissions  AssignmentSubmission[] @relation("SubmissionGradedBy")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+  @@map("users")
+}
+
+/// OAuth accounts (unused today; present so Google sign-in can be enabled
+/// later without a schema migration).
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// People
+// ---------------------------------------------------------------------------
+
+model Student {
+  id       String @id @default(cuid())
+  legacyId Int?   @unique
+  userId   String @unique
+
+  fullName      String
+  rollNumber    String?   @unique
+  phone         String    @unique
+  guardianPhone String?
+  fatherName    String?
+  motherName    String?
+  institution   String?
+  address       String?
+  dateOfBirth   DateTime?
+  gender        Gender?
+  photoUrl      String?
+  classGroup    String?
+  academicYear  String?
+
+  admissionDate DateTime?
+  status        StudentStatus @default(ACTIVE)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  enrollments           Enrollment[]
+  payments              Payment[]
+  attendanceRecords     AttendanceRecord[]
+  examResults           ExamResult[]
+  assignmentSubmissions AssignmentSubmission[]
+  examAttempts          ExamAttempt[]
+  cqSubmissions         CQSubmission[]
+  teacherEvaluations    TeacherEvaluation[]
+  noteEmailLogs         NoteEmailLog[]
+  notificationLogs      NotificationLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([fullName])
+  @@map("students")
+}
+
+/// New in the Next.js rebuild — the legacy system had no teacher entity,
+/// only free-text `teacher_name` strings on class_routine and trial_classes.
+model Teacher {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  fullName       String
+  employeeId     String?       @unique
+  phone          String?
+  designation    String?
+  qualification  String?
+  specialization String?
+  bio            String?
+  photoUrl       String?
+  joiningDate    DateTime?
+  status         TeacherStatus @default(ACTIVE)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  assignments        TeacherAssignment[]
+  attendanceSessions AttendanceSession[]
+  routines           ClassRoutine[]
+  liveClasses        LiveClass[]
+  exams              Exam[]
+  cqExams            CQExam[]
+  evaluations        TeacherEvaluation[]
+  cqEvaluated        CQSubmission[]      @relation("CQEvaluatedBy")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@map("teachers")
+}
+
+// ---------------------------------------------------------------------------
+// Academic structure
+// ---------------------------------------------------------------------------
+
+model Course {
+  id       String @id @default(cuid())
+  legacyId Int?   @unique
+
+  name        String
+  slug        String   @unique
+  description String?
+  imageUrl    String?
+  fee         Decimal? @db.Decimal(10, 2)
+  duration    String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+
+  batches  Batch[]
+  subjects Subject[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@map("courses")
+}
+
+/// Replaces the legacy free-text `batch` VARCHAR.
+model Batch {
+  id       String @id @default(cuid())
+  courseId String
+
+  name         String
+  academicYear String?
+  startDate    DateTime?
+  endDate      DateTime?
+  capacity     Int?
+  isActive     Boolean   @default(true)
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  enrollments        Enrollment[]
+  routines           ClassRoutine[]
+  attendanceSessions AttendanceSession[]
+  liveClasses        LiveClass[]
+  exams              Exam[]
+  cqExams            CQExam[]
+  assignments        Assignment[]
+  studyMaterials     StudyMaterial[]
+  teacherAssignments TeacherAssignment[]
+  payments           Payment[]
+  evaluations        TeacherEvaluation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([courseId, name])
+  @@index([isActive])
+  @@map("batches")
+}
+
+/// Needed by the CQ exam module ("select course and subject").
+model Subject {
+  id       String @id @default(cuid())
+  courseId String
+
+  name String
+  code String?
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  routines           ClassRoutine[]
+  attendanceSessions AttendanceSession[]
+  liveClasses        LiveClass[]
+  exams              Exam[]
+  cqExams            CQExam[]
+  studyMaterials     StudyMaterial[]
+  teacherAssignments TeacherAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([courseId, name])
+  @@map("subjects")
+}
+
+/// Replaces string-matching `students.course` against `courses.name`.
+model Enrollment {
+  id        String @id @default(cuid())
+  studentId String
+  batchId   String
+
+  enrolledAt DateTime      @default(now())
+  status     StudentStatus @default(ACTIVE)
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  batch   Batch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, batchId])
+  @@index([batchId])
+  @@map("enrollments")
+}
+
+/// Which teacher teaches which subject in which batch.
+model TeacherAssignment {
+  id        String  @id @default(cuid())
+  teacherId String
+  batchId   String
+  subjectId String?
+
+  assignedAt DateTime @default(now())
+
+  teacher Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  batch   Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  @@unique([teacherId, batchId, subjectId])
+  @@index([batchId])
+  @@map("teacher_assignments")
+}
+
+// ---------------------------------------------------------------------------
+// Attendance — redesigned around sessions
+// ---------------------------------------------------------------------------
+
+/// One class sitting. Carries the course (via batch), subject and teacher
+/// dimensions the legacy `attendance` table lacked.
+model AttendanceSession {
+  id        String  @id @default(cuid())
+  batchId   String
+  subjectId String?
+  teacherId String?
+
+  date      DateTime @db.Date
+  startTime String? // "HH:mm" — stored as text to stay timezone-free
+  endTime   String?
+  topic     String?
+  notes     String?
+
+  /// Stable key used only by the legacy importer. Postgres treats NULLs as
+  /// distinct in unique constraints, so `@@unique([batchId, date, subjectId])`
+  /// cannot de-duplicate the imported sessions (which have no subject). This
+  /// gives the migration something non-null to upsert against.
+  importKey String? @unique
+
+  batch   Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  teacher Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+
+  records AttendanceRecord[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([batchId, date, subjectId])
+  @@index([date])
+  @@index([teacherId])
+  @@map("attendance_sessions")
+}
+
+model AttendanceRecord {
+  id        String @id @default(cuid())
+  legacyId  Int?   @unique
+  sessionId String
+  studentId String
+
+  status AttendanceStatus @default(PRESENT)
+  note   String?
+
+  session AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sessionId, studentId])
+  @@index([studentId])
+  @@index([status])
+  @@map("attendance_records")
+}
+
+// ---------------------------------------------------------------------------
+// Payments
+// ---------------------------------------------------------------------------
+
+model Payment {
+  id        String  @id @default(cuid())
+  legacyId  Int?    @unique
+  studentId String
+  batchId   String?
+
+  amount        Decimal       @db.Decimal(10, 2)
+  dueAmount     Decimal       @default(0) @db.Decimal(10, 2)
+  paymentMonth  String // "2026-08" or a free label, matching legacy usage
+  status        PaymentStatus @default(UNPAID)
+  method        PaymentMethod @default(CASH)
+  receiptNumber String?       @unique
+  paidAt        DateTime?
+  notes         String?
+  recordedById  String?
+
+  student    Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  batch      Batch?  @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  recordedBy User?   @relation("PaymentRecordedBy", fields: [recordedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId])
+  @@index([paymentMonth])
+  @@index([status])
+  @@map("payments")
+}
+
+// ---------------------------------------------------------------------------
+// Scheduling & live classes
+// ---------------------------------------------------------------------------
+
+model ClassRoutine {
+  id        String  @id @default(cuid())
+  legacyId  Int?    @unique
+  batchId   String
+  subjectId String?
+  teacherId String?
+
+  dayOfWeek  DayOfWeek
+  startTime  String // "HH:mm"
+  endTime    String
+  roomNumber String?
+
+  batch   Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  teacher Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([batchId, dayOfWeek])
+  @@map("class_routines")
+}
+
+/// Google Meet live classes — new module.
+model LiveClass {
+  id        String  @id @default(cuid())
+  batchId   String
+  subjectId String?
+  teacherId String?
+
+  title           String
+  description     String?
+  meetingLink     String
+  scheduledAt     DateTime
+  durationMinutes Int           @default(60)
+  status          PublishStatus @default(PUBLISHED)
+
+  batch   Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  teacher Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([scheduledAt])
+  @@index([batchId])
+  @@map("live_classes")
+}
+
+// ---------------------------------------------------------------------------
+// Online MCQ exams — new module
+// ---------------------------------------------------------------------------
+
+model Exam {
+  id        String  @id @default(cuid())
+  batchId   String
+  subjectId String?
+  teacherId String?
+
+  title            String
+  description      String?
+  instructions     String?
+  durationMinutes  Int           @default(30)
+  totalMarks       Decimal       @default(0) @db.Decimal(6, 2)
+  passMarks        Decimal?      @db.Decimal(6, 2)
+  negativeMarking  Decimal       @default(0) @db.Decimal(4, 2)
+  shuffleQuestions Boolean       @default(false)
+  startsAt         DateTime?
+  endsAt           DateTime?
+  status           PublishStatus @default(DRAFT)
+  resultsPublished Boolean       @default(false)
+
+  batch   Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  teacher Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+
+  questions Question[]
+  attempts  ExamAttempt[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([batchId])
+  @@index([status])
+  @@map("exams")
+}
+
+model Question {
+  id     String @id @default(cuid())
+  examId String
+
+  order    Int
+  text     String
+  imageUrl String?
+  marks    Decimal @default(1) @db.Decimal(5, 2)
+
+  exam    Exam             @relation(fields: [examId], references: [id], onDelete: Cascade)
+  options QuestionOption[]
+  answers StudentAnswer[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([examId, order])
+  @@map("questions")
+}
+
+model QuestionOption {
+  id         String @id @default(cuid())
+  questionId String
+
+  order     Int
+  text      String
+  isCorrect Boolean @default(false)
+
+  question Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  answers  StudentAnswer[]
+
+  @@unique([questionId, order])
+  @@map("question_options")
+}
+
+model ExamAttempt {
+  id        String @id @default(cuid())
+  examId    String
+  studentId String
+
+  startedAt    DateTime      @default(now())
+  submittedAt  DateTime?
+  status       AttemptStatus @default(IN_PROGRESS)
+  score        Decimal?      @db.Decimal(6, 2)
+  correctCount Int           @default(0)
+  wrongCount   Int           @default(0)
+
+  exam    Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  answers StudentAnswer[]
+
+  @@unique([examId, studentId])
+  @@index([studentId])
+  @@map("exam_attempts")
+}
+
+model StudentAnswer {
+  id               String  @id @default(cuid())
+  attemptId        String
+  questionId       String
+  selectedOptionId String?
+
+  isCorrect    Boolean @default(false)
+  marksAwarded Decimal @default(0) @db.Decimal(5, 2)
+
+  attempt        ExamAttempt     @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question       Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  selectedOption QuestionOption? @relation(fields: [selectedOptionId], references: [id], onDelete: SetNull)
+
+  @@unique([attemptId, questionId])
+  @@map("student_answers")
+}
+
+// ---------------------------------------------------------------------------
+// CQ (Creative Question) exams — new module
+// ---------------------------------------------------------------------------
+
+model CQExam {
+  id        String  @id @default(cuid())
+  batchId   String
+  subjectId String?
+  teacherId String?
+
+  title             String
+  instructions      String?
+  examDate          DateTime?
+  durationMinutes   Int           @default(120)
+  totalMarks        Decimal       @default(0) @db.Decimal(6, 2)
+  /// How many of the supplied creative questions a student must answer.
+  questionsToAnswer Int?
+  status            PublishStatus @default(DRAFT)
+  resultsPublished  Boolean       @default(false)
+
+  batch   Batch    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  subject Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  teacher Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+
+  questions   CQQuestion[]
+  submissions CQSubmission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([batchId])
+  @@index([status])
+  @@map("cq_exams")
+}
+
+/// A creative question: a numbered stem (উদ্দীপক) plus its ক/খ/গ/ঘ parts.
+model CQQuestion {
+  id       String @id @default(cuid())
+  cqExamId String
+
+  questionNo Int
+  stem       String
+  imageUrl   String?
+
+  cqExam CQExam           @relation(fields: [cqExamId], references: [id], onDelete: Cascade)
+  parts  CQQuestionPart[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cqExamId, questionNo])
+  @@map("cq_questions")
+}
+
+model CQQuestionPart {
+  id           String @id @default(cuid())
+  cqQuestionId String
+
+  partType CQPartType
+  text     String
+  marks    Decimal    @db.Decimal(5, 2)
+
+  question CQQuestion @relation(fields: [cqQuestionId], references: [id], onDelete: Cascade)
+  answers  CQAnswer[]
+
+  @@unique([cqQuestionId, partType])
+  @@map("cq_question_parts")
+}
+
+model CQSubmission {
+  id        String @id @default(cuid())
+  cqExamId  String
+  studentId String
+
+  startedAt   DateTime      @default(now())
+  submittedAt DateTime?
+  status      AttemptStatus @default(IN_PROGRESS)
+
+  totalMarks    Decimal?  @db.Decimal(6, 2)
+  feedback      String?
+  evaluatedById String?
+  evaluatedAt   DateTime?
+
+  cqExam      CQExam   @relation(fields: [cqExamId], references: [id], onDelete: Cascade)
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  evaluatedBy Teacher? @relation("CQEvaluatedBy", fields: [evaluatedById], references: [id], onDelete: SetNull)
+
+  answers CQAnswer[]
+
+  @@unique([cqExamId, studentId])
+  @@index([studentId])
+  @@map("cq_submissions")
+}
+
+model CQAnswer {
+  id           String @id @default(cuid())
+  submissionId String
+  partId       String
+
+  answerText   String
+  marksAwarded Decimal? @db.Decimal(5, 2)
+  comment      String?
+
+  submission CQSubmission   @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  part       CQQuestionPart @relation(fields: [partId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([submissionId, partId])
+  @@map("cq_answers")
+}
+
+// ---------------------------------------------------------------------------
+// Teacher evaluation — new module
+// ---------------------------------------------------------------------------
+
+/// Students rate teachers on seven criteria (1–5 each). `isAnonymous` hides
+/// the student's identity from the teacher, but the row still stores
+/// `studentId` so admins can audit and the one-per-batch rule can be enforced.
+model TeacherEvaluation {
+  id        String  @id @default(cuid())
+  teacherId String
+  studentId String
+  batchId   String?
+
+  teachingQuality     Int
+  explanationClarity  Int
+  classManagement     Int
+  timeManagement      Int
+  communicationSkills Int
+  courseDelivery      Int
+  studentSatisfaction Int
+
+  /// Denormalised mean of the seven criteria — kept so ranking and trend
+  /// queries stay cheap.
+  averageRating Float
+  comment       String?
+  isAnonymous   Boolean @default(false)
+
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  batch   Batch?  @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([teacherId, studentId, batchId])
+  @@index([teacherId])
+  @@index([createdAt])
+  @@map("teacher_evaluations")
+}
+
+// ---------------------------------------------------------------------------
+// Content & materials
+// ---------------------------------------------------------------------------
+
+/// Offline / manually-entered results (the legacy `exam_results` table).
+/// Online MCQ and CQ results live in ExamAttempt and CQSubmission.
+model ExamResult {
+  id        String @id @default(cuid())
+  legacyId  Int?   @unique
+  studentId String
+
+  examName      String
+  subject       String
+  marksObtained Decimal   @db.Decimal(6, 2)
+  totalMarks    Decimal   @db.Decimal(6, 2)
+  grade         String?
+  feedback      String?
+  examDate      DateTime?
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId])
+  @@map("exam_results")
+}
+
+model StudyMaterial {
+  id        String  @id @default(cuid())
+  legacyId  Int?    @unique
+  batchId   String?
+  subjectId String?
+
+  title        String
+  description  String?
+  fileUrl      String
+  fileType     MaterialType @default(PDF)
+  fileSize     Int?
+  uploadedById String?
+
+  batch      Batch?   @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  subject    Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  uploadedBy User?    @relation("MaterialUploadedBy", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([batchId])
+  @@map("study_materials")
+}
+
+model Assignment {
+  id       String  @id @default(cuid())
+  legacyId Int?    @unique
+  batchId  String?
+
+  title       String
+  description String
+  dueDate     DateTime
+  fileUrl     String?
+  totalMarks  Decimal? @db.Decimal(5, 2)
+  createdById String?
+
+  batch     Batch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  createdBy User?  @relation("AssignmentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  submissions AssignmentSubmission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([batchId])
+  @@map("assignments")
+}
+
+model AssignmentSubmission {
+  id           String @id @default(cuid())
+  legacyId     Int?   @unique
+  assignmentId String
+  studentId    String
+
+  fileUrl     String
+  submittedAt DateTime  @default(now())
+  grade       String?
+  marks       Decimal?  @db.Decimal(5, 2)
+  feedback    String?
+  gradedById  String?
+  gradedAt    DateTime?
+
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student    Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  gradedBy   User?      @relation("SubmissionGradedBy", fields: [gradedById], references: [id], onDelete: SetNull)
+
+  @@unique([assignmentId, studentId])
+  @@index([studentId])
+  @@map("assignment_submissions")
+}
+
+/// Legacy `admin_notes` — PDF notes emailed out to a batch.
+model AdminNote {
+  id       String @id @default(cuid())
+  legacyId Int?   @unique
+
+  title       String
+  message     String?
+  fileUrl     String
+  batchLabel  String?
+  createdById String?
+
+  createdBy User? @relation("NoteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  emailLogs NoteEmailLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("admin_notes")
+}
+
+model NoteEmailLog {
+  id        String @id @default(cuid())
+  noteId    String
+  studentId String
+
+  studentEmail String
+  status       DeliveryStatus @default(SENT)
+  errorMessage String?
+  sentAt       DateTime       @default(now())
+
+  note    AdminNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  student Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([noteId, studentId])
+  @@map("note_email_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Gallery — categories are now admin-created rows, not a hardcoded <select>
+// ---------------------------------------------------------------------------
+
+model GalleryCategory {
+  id String @id @default(cuid())
+
+  name        String  @unique
+  slug        String  @unique
+  description String?
+  coverUrl    String?
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
+
+  images GalleryImage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("gallery_categories")
+}
+
+model GalleryImage {
+  id         String  @id @default(cuid())
+  legacyId   Int?    @unique
+  categoryId String?
+
+  title       String
+  description String?
+  imageUrl    String
+  /// Vercel Blob pathname, retained so the blob can be deleted with the row.
+  blobPath    String?
+  eventDate   DateTime?
+  isFeatured  Boolean       @default(false)
+  sortOrder   Int           @default(0)
+  status      ContentStatus @default(ACTIVE)
+
+  category GalleryCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([categoryId])
+  @@index([status])
+  @@map("gallery_images")
+}
+
+// ---------------------------------------------------------------------------
+// Public site content
+// ---------------------------------------------------------------------------
+
+model Admission {
+  id       String @id @default(cuid())
+  legacyId Int?   @unique
+
+  fullName      String
+  fatherName    String?
+  motherName    String?
+  mobile        String
+  email         String?
+  address       String?
+  qualification String?
+  courseId      String?
+  courseLabel   String?
+  message       String?
+  status        AdmissionStatus @default(PENDING)
+  reviewedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@map("admissions")
+}
+
+/// Legacy `feedback` — public website testimonials. Distinct from
+/// TeacherEvaluation, which is the internal student→teacher rating module.
+model Testimonial {
+  id       String @id @default(cuid())
+  legacyId Int?   @unique
+
+  name       String
+  courseName String?
+  rating     Int
+  content    String
+  photoUrl   String?
+  status     AdmissionStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@map("testimonials")
+}
+
+model Notice {
+  id       String @id @default(cuid())
+  legacyId Int?   @unique
+
+  title       String
+  description String
+  isPinned    Boolean       @default(false)
+  publishedAt DateTime      @default(now())
+  status      ContentStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@map("notices")
+}
+
+model TrialClass {
+  id       String @id @default(cuid())
+  legacyId Int?   @unique
+
+  title        String
+  teacherName  String
+  courseName   String?
+  description  String?
+  thumbnailUrl String?
+  videoUrl     String
+  status       ContentStatus @default(ACTIVE)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@map("trial_classes")
+}
+
+model Achievement {
+  id       String @id @default(cuid())
+  legacyId Int?   @unique
+
+  title       String
+  description String?
+  imageUrl    String?
+  achievedAt  DateTime?
+  sortOrder   Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("achievements")
+}
+
+// ---------------------------------------------------------------------------
+// Ops — notifications & settings
+// ---------------------------------------------------------------------------
+
+model NotificationLog {
+  id        String  @id @default(cuid())
+  studentId String?
+
+  channel   NotificationChannel
+  recipient String
+  subject   String?
+  message   String
+  status    DeliveryStatus      @default(SENT)
+  error     String?
+  sentAt    DateTime            @default(now())
+
+  student Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+
+  @@index([studentId])
+  @@index([sentAt])
+  @@map("notification_logs")
+}
+
+/// Key/value site configuration. Replaces the legacy single-row
+/// `email_settings` table and the hardcoded constants in config.php.
+model SiteSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("site_settings")
+}
