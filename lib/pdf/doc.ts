@@ -77,9 +77,12 @@ export async function newPdf(options: PdfOptions = {}): Promise<PDFKit.PDFDocume
       Author: options.author ?? 'Orbit Private Care',
       Creator: 'Orbit',
     },
-    // The fallback font is never used, but PDFKit needs one before a font is
-    // registered, and a missing standard font would throw.
-    font: undefined as unknown as string,
+    // The document starts in Hind Siliguri itself. \`undefined\` here does NOT
+    // skip the default: initFonts(defaultFont = 'Helvetica') fills it in, and
+    // PDFKit then loads its built-in Helvetica through a package import map
+    // (#standard-fonts/*) that the Vercel runtime cannot resolve — every PDF
+    // failed there with MODULE_NOT_FOUND while working locally.
+    font: regular as unknown as string,
   });
 
   doc.registerFont(FONT_REGULAR, regular);
