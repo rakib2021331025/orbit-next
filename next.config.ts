@@ -9,6 +9,15 @@ const supabaseHost = (() => {
   }
 })();
 
+const PDF_RUNTIME_FILES = [
+  './node_modules/pdfkit/js/standard-fonts/**/*',
+  './node_modules/pdfkit/js/data/**/*',
+  './node_modules/pdfkit/package.json',
+  './assets/fonts/hind-siliguri/HindSiliguri-Regular.ttf',
+  './assets/fonts/hind-siliguri/HindSiliguri-Bold.ttf',
+  './public/assets/brand/orbit-logo-320.png',
+];
+
 const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
@@ -17,6 +26,17 @@ const config: NextConfig = {
   // with little free memory (a worker crash there looks like exit 3221226505).
   // Unset, Next.js picks the number itself, as on Vercel.
   ...(process.env.NEXT_BUILD_CPUS ? { experimental: { cpus: Number(process.env.NEXT_BUILD_CPUS) } } : {}),
+
+  // Files the PDF routes read at run time that Next's file tracing cannot see,
+  // so they would be missing from the Vercel function bundle and every PDF would
+  // fail with a 500 — while working fine locally:
+  //   - PDFKit loads its built-in Helvetica through the package's own import map
+  //     (`#standard-fonts/*` → js/standard-fonts/*.cjs) with a dynamic require;
+  //   - lib/pdf/doc.ts reads the Bangla fonts and the letterhead logo from a path
+  //     built with process.cwd().
+  outputFileTracingIncludes: Object.fromEntries(
+    ['/api/**/*', '/fee-slip', '/marksheet-share'].map((route) => [route, PDF_RUNTIME_FILES])
+  ),
 
   images: {
     formats: ['image/avif', 'image/webp'],
