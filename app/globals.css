@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * The original Orbit tokens, copied from Orbit/assets/css/orbit.css and
+ * theme.css. Tailwind reads them through tailwind.config.ts, and dark mode
+ * swaps them exactly as the PHP app does — by setting data-theme on <html>.
+ */
+:root {
+  --orbit-brand-deep: #062c19;
+  --orbit-brand-deep-2: #0b3d24;
+  --orbit-brand-mid: #0f5132;
+  --orbit-yellow: #fedc02;
+
+  --orbit-bg: #f5f7f4;
+  --orbit-bg-alt: #eef3ee;
+  --orbit-surface: #ffffff;
+  --orbit-surface-2: #f7faf7;
+  --orbit-surface-3: #e9f0ea;
+
+  --orbit-text: #1d2a22;
+  --orbit-text-muted: #5b6961;
+  --orbit-heading: #062c19;
+
+  --orbit-border: #d7e0d9;
+  --orbit-border-soft: #e5ece6;
+
+  --orbit-primary: #15803d;
+  --orbit-primary-hover: #116932;
+  --orbit-primary-soft: #e7f4ec;
+  --orbit-primary-text: #0f5a2c;
+
+  --orbit-accent: #fedc02;
+  --orbit-accent-soft: #fff7c2;
+  --orbit-accent-text: #5c4a00;
+
+  --orbit-navbar-bg: #062c19;
+  --orbit-shadow: 0 6px 18px rgba(6, 44, 25, 0.06);
+  --orbit-shadow-lg: 0 18px 40px rgba(6, 44, 25, 0.13);
+  --orbit-radius: 14px;
+}
+
+[data-theme='dark'] {
+  --orbit-bg: #0a120e;
+  --orbit-bg-alt: #0d1712;
+  --orbit-surface: #111c16;
+  --orbit-surface-2: #16241c;
+  --orbit-surface-3: #1c2e23;
+
+  --orbit-text: #e7efe9;
+  --orbit-text-muted: #b8c6bd;
+  --orbit-heading: #f4faf6;
+
+  --orbit-border: #24362b;
+  --orbit-border-soft: #1d2d24;
+
+  --orbit-primary: #2f9e5a;
+  --orbit-primary-hover: #38b167;
+  --orbit-primary-soft: #14301f;
+  --orbit-primary-text: #9fe0b8;
+}
+
+body {
+  background: var(--orbit-bg);
+  color: var(--orbit-text);
+}

@@ -1,0 +1,1691 @@
+// Orbit Private Care — PostgreSQL schema for orbit-next.
+//
+// Generated from the original MySQL schema of the PHP app, table for table:
+// 65 tables, 726 columns, 61 foreign keys, 62 enums. Field names keep their
+// database spelling so every query in the original can be compared directly;
+// models are PascalCase and carry @@map to the real table name.
+//
+// Do not edit by hand without re-checking against the original schema.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Achievement {
+  id          Int      @id @default(autoincrement())
+  title       String   @db.VarChar(255)
+  description String?  @db.Text
+  image       String   @db.VarChar(255)
+  created_at  DateTime @default(now())
+
+  @@index([created_at])
+  @@map("achievements")
+}
+
+model AdminNote {
+  id         Int      @id @default(autoincrement())
+  title      String   @db.VarChar(255)
+  message    String?  @db.Text
+  pdf_path   String   @db.VarChar(255)
+  batch      String   @db.VarChar(100)
+  created_by Int
+  created_at DateTime @default(now())
+
+  @@map("admin_notes")
+}
+
+model Admin {
+  id                            Int             @id @default(autoincrement())
+  name                          String?         @db.VarChar(191)
+  email                         String          @unique @db.VarChar(255)
+  password_hash                 String          @db.VarChar(255)
+  created_at                    DateTime        @default(now())
+  branch_id                     Int?
+  role                          AdminRole       @default(super_admin)
+  status                        AdminStatus     @default(active)
+  last_login                    DateTime?
+  created_by                    Int?
+  updated_at                    DateTime?       @updatedAt
+  branch                        Branch?         @relation("Admin_branch_id", fields: [branch_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  assignment_created_by_ref     Assignment[]    @relation("Assignment_created_by")
+  studyMaterial_uploaded_by_ref StudyMaterial[] @relation("StudyMaterial_uploaded_by")
+
+  @@index([branch_id])
+  @@index([role, status])
+  @@map("admins")
+}
+
+model Admission {
+  id                   Int                     @id @default(autoincrement())
+  application_no       String?                 @unique @db.VarChar(30)
+  fullname             String                  @db.VarChar(255)
+  fullname_bn          String?                 @db.VarChar(255)
+  father_name          String                  @db.VarChar(255)
+  mother_name          String                  @db.VarChar(255)
+  mobile               String                  @db.VarChar(20)
+  email                String?                 @db.VarChar(255)
+  address              String                  @db.Text
+  qualification        String                  @db.VarChar(255)
+  course               String                  @db.VarChar(255)
+  message              String?                 @db.Text
+  created_at           DateTime                @default(now())
+  guardian_phone       String?                 @db.VarChar(20)
+  date_of_birth        DateTime?               @db.Date
+  gender               AdmissionGender?
+  institution          String?                 @db.VarChar(255)
+  photo                String?                 @db.VarChar(255)
+  course_id            Int?
+  batch_id             Int?
+  batch_label          String?                 @db.VarChar(150)
+  batch_type           AdmissionBatchType?
+  payment_method       AdmissionPaymentMethod?
+  transaction_id       String?                 @db.VarChar(100)
+  sender_number        String?                 @db.VarChar(20)
+  payment_amount       Decimal?                @db.Decimal(10, 2)
+  payment_screenshot   String?                 @db.VarChar(255)
+  status               AdmissionStatus         @default(pending)
+  review_note          String?                 @db.Text
+  reviewed_at          DateTime?
+  reviewed_by          Int?
+  student_id           Int?
+  updated_at           DateTime                @default(now()) @updatedAt
+  applicant_student_id Int?
+  student_id_input     String?                 @db.VarChar(30)
+  enrollment_id        Int?
+  approved_at          DateTime?
+  rejected_at          DateTime?
+  submitted_lang       String?                 @db.VarChar(5)
+  branch_id            Int?
+  branch               Branch?                 @relation("Admission_branch_id", fields: [branch_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  enrollment_admission Enrollment[]            @relation("Enrollment_admission_id")
+
+  @@index([status])
+  @@index([batch_id])
+  @@index([mobile])
+  @@index([created_at])
+  @@index([transaction_id])
+  @@index([student_id])
+  @@index([applicant_student_id])
+  @@index([branch_id, status, created_at])
+  @@map("admissions")
+}
+
+model AiAnswerCache {
+  question_hash String    @id @db.Char(64)
+  question      String    @db.Text
+  answer        String    @db.Text
+  language      String    @default("en") @db.VarChar(10)
+  hits          Int       @default(0)
+  created_at    DateTime  @default(now())
+  last_used_at  DateTime?
+
+  @@index([created_at])
+  @@map("ai_answer_cache")
+}
+
+model AiConversation {
+  id                     Int         @id @default(autoincrement())
+  student_id             Int
+  title                  String?     @db.VarChar(191)
+  created_at             DateTime    @default(now())
+  updated_at             DateTime    @default(now()) @updatedAt
+  student                Student     @relation("AiConversation_student_id", fields: [student_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  aiMessage_conversation AiMessage[] @relation("AiMessage_conversation_id")
+
+  @@index([student_id, updated_at])
+  @@map("ai_conversations")
+}
+
+model AiMessage {
+  id              Int            @id @default(autoincrement())
+  conversation_id Int
+  student_id      Int
+  role            AiMessageRole
+  content         String         @db.Text
+  image_path      String?        @db.VarChar(255)
+  tokens          Int?
+  from_cache      Boolean        @default(false)
+  created_at      DateTime       @default(now())
+  conversation    AiConversation @relation("AiMessage_conversation_id", fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  student         Student        @relation("AiMessage_student_id", fields: [student_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([conversation_id, id])
+  @@index([student_id, role, created_at])
+  @@map("ai_messages")
+}
+
+model AppSchemaVersion {
+  id         Int      @id
+  version    Int      @default(0)
+  applied_at DateTime @default(now()) @updatedAt
+
+  @@map("app_schema_version")
+}
+
+model AssignmentSubmission {
+  id            Int        @id @default(autoincrement())
+  assignment_id Int
+  student_id    Int
+  file_path     String     @db.VarChar(500)
+  submitted_at  DateTime   @default(now())
+  marks         Decimal?   @db.Decimal(5, 2)
+  feedback      String?    @db.Text
+  assignment    Assignment @relation("AssignmentSubmission_assignment_id", fields: [assignment_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  student       Student    @relation("AssignmentSubmission_student_id", fields: [student_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([assignment_id])
+  @@index([student_id])
+  @@map("assignment_submissions")
+}
+
+model Assignment {
+  id                              Int                    @id @default(autoincrement())
+  title                           String                 @db.VarChar(255)
+  description                     String                 @db.Text
+  course                          String                 @db.VarChar(255)
+  batch                           String?                @db.VarChar(100)
+  due_date                        DateTime               @db.Date
+  file_path                       String?                @db.VarChar(500)
+  created_by                      Int
+  created_at                      DateTime               @default(now())
+  branch_id                       Int?
+  created_by_ref                  Admin                  @relation("Assignment_created_by", fields: [created_by], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  branch                          Branch?                @relation("Assignment_branch_id", fields: [branch_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  assignmentSubmission_assignment AssignmentSubmission[] @relation("AssignmentSubmission_assignment_id")
+
+  @@index([created_by])
+  @@index([course, due_date])
+  @@index([branch_id])
+  @@map("assignments")
+}
+
+model Attendance {
+  id              Int               @id @default(autoincrement())
+  student_id      Int
+  course_id       Int?
+  batch_id        Int               @default(0)
+  attendance_date DateTime          @db.Date
+  class_label     String?           @db.VarChar(150)
+  status          AttendanceStatus? @default(present)
+  note            String?           @db.VarChar(255)
+  created_at      DateTime          @default(now())
+  marked_by       Int?
+  updated_at      DateTime?         @updatedAt
+  branch_id       Int?
+  student         Student           @relation("Attendance_student_id", fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  branch          Branch?           @relation("Attendance_branch_id", fields: [branch_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([student_id, attendance_date, batch_id])
+  @@index([batch_id, attendance_date])
+  @@index([course_id, attendance_date])
+  @@index([attendance_date, status])
+  @@index([branch_id, attendance_date, status, student_id])
+  @@index([attendance_date, branch_id, status, student_id])
+  @@map("attendance")
+}
+
+model AuthRememberToken {
+  id             Int                       @id @default(autoincrement())
+  user_type      AuthRememberTokenUserType
+  user_id        Int
+  selector       String                    @unique @db.Char(32)
+  validator_hash String                    @db.Char(64)
+  expires_at     DateTime
+  created_at     DateTime                  @default(now())
+  last_used_at   DateTime?
+
+  @@index([user_type, user_id])
+  @@index([expires_at])
+  @@map("auth_remember_tokens")
+}
+
+model Batch {
+  id                      Int             @id @default(autoincrement())
+  course_id               Int?
+  name                    String          @db.VarChar(150)
+  name_bn                 String?         @db.VarChar(150)
+  batch_type              BatchBatchType  @default(offline)
+  schedule_info           String?         @db.VarChar(255)
+  schedule_info_bn        String?         @db.VarChar(255)
+  start_date              DateTime?       @db.Date
+  capacity                Int?
+  fee                     Decimal?        @db.Decimal(10, 2)
+  status                  BatchStatus     @default(active)
+  sort_order              Int             @default(0)
+  created_at              DateTime        @default(now())
+  updated_at              DateTime        @default(now()) @updatedAt
+  branch_id               Int?
+  course                  Course?         @relation("Batch_course_id", fields: [course_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  branch                  Branch?         @relation("Batch_branch_id", fields: [branch_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  enrollment_batch        Enrollment[]    @relation("Enrollment_batch_id")
+  monthlyExam_batch       MonthlyExam[]   @relation("MonthlyExam_batch_id")
+  recordedClass_batch_ref RecordedClass[] @relation("RecordedClass_batch_id")
+
+  @@unique([course_id, branch_id, name, batch_type])
+  @@index([course_id])
+  @@index([batch_type])
+  @@index([status])
+  @@index([branch_id, status])
+  @@map("batches")
+}
+
+model BranchCourse {
+  branch_id  Int
+  course_id  Int
+  status     BranchCourseStatus @default(active)
+  created_at DateTime           @default(now())
+  branch     Branch             @relation("BranchCourse_branch_id", fields: [branch_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  course     Course             @relation("BranchCourse_course_id", fields: [course_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([branch_id, course_id])
+  @@index([course_id, status])
+  @@map("branch_courses")
+}
+
+model BranchTeacher {
+  branch_id  Int
+  teacher_id Int
+  created_at DateTime @default(now())
+  branch     Branch   @relation("BranchTeacher_branch_id", fields: [branch_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  teacher    Teacher  @relation("BranchTeacher_teacher_id", fields: [teacher_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([branch_id, teacher_id])
+  @@index([teacher_id])
+  @@map("branch_teachers")
+}
+
+model Branch {
+  id                   Int             @id @default(autoincrement())
+  name_bn              String          @db.VarChar(191)
+  name_en              String          @db.VarChar(191)
+  slug                 String          @unique @db.VarChar(80)
+  address_bn           String?         @db.VarChar(500)
+  address_en           String?         @db.VarChar(500)
+  description_bn       String?         @db.Text
+  description_en       String?         @db.Text
+  phone                String?         @db.VarChar(30)
+  email                String?         @db.VarChar(191)
+  image                String?         @db.VarChar(255)
+  map_url              String?         @db.VarChar(1000)
+  status               BranchStatus    @default(active)
+  is_main              Boolean         @default(false)
+  sort_order           Int             @default(0)
+  created_at           DateTime        @default(now())
+  updated_at           DateTime        @default(now()) @updatedAt
+  admin_branch         Admin[]         @relation("Admin_branch_id")
+  admission_branch     Admission[]     @relation("Admission_branch_id")
+  assignment_branch    Assignment[]    @relation("Assignment_branch_id")
+  attendance_branch    Attendance[]    @relation("Attendance_branch_id")
+  batch_branch         Batch[]         @relation("Batch_branch_id")
+  branchCourse_branch  BranchCourse[]  @relation("BranchCourse_branch_id")
+  branchTeacher_branch BranchTeacher[] @relation("BranchTeacher_branch_id")
+  classRoutine_branch  ClassRoutine[]  @relation("ClassRoutine_branch_id")
+  exam_branch          Exam[]          @relation("Exam_branch_id")
+  liveClass_branch     LiveClass[]     @relation("LiveClass_branch_id")
+  notice_branch        Notice[]        @relation("Notice_branch_id")
+  payment_branch       Payment[]       @relation("Payment_branch_id")
+  recordedClass_branch RecordedClass[] @relation("RecordedClass_branch_id")
+  student_branch       Student[]       @relation("Student_branch_id")
+  studyMaterial_branch StudyMaterial[] @relation("StudyMaterial_branch_id")
+
+  @@index([status, sort_order])
+  @@map("branches")
+}
+
+model ClassRoutine {
+  id           Int      @id @default(autoincrement())
+  course       String   @db.VarChar(255)
+  batch        String?  @db.VarChar(100)
+  day_of_week  String   @db.VarChar(20)
+  start_time   DateTime @db.Time(0)
+  end_time     DateTime @db.Time(0)
+  subject      String   @db.VarChar(255)
+  teacher_name String   @db.VarChar(255)
+  room_number  String?  @db.VarChar(50)
+  created_at   DateTime @default(now())
+  branch_id    Int?
+  branch       Branch?  @relation("ClassRoutine_branch_id", fields: [branch_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([branch_id])
+  @@map("class_routine")
+}
+
+model Course {
+  id                   Int                    @id @default(autoincrement())
+  name                 String                 @db.VarChar(255)
+  name_bn              String?                @db.VarChar(255)
+  description          String                 @db.Text
+  image                String                 @db.VarChar(255)
+  created_at           DateTime               @default(now())
+  fee                  Decimal?               @db.Decimal(10, 2)
+  duration             String?                @db.VarChar(100)
+  status               CourseStatus           @default(active)
+  sort_order           Int                    @default(0)
+  short_description    String?                @db.VarChar(500)
+  short_description_bn String?                @db.VarChar(500)
+  description_bn       String?                @db.Text
+  course_type          CourseCourseType       @default(offline)
+  duration_bn          String?                @db.VarChar(100)
+  batch_info           String?                @db.VarChar(255)
+  batch_info_bn        String?                @db.VarChar(255)
+  teacher_id           Int?
+  instructor_name      String?                @db.VarChar(255)
+  enrollment_status    CourseEnrollmentStatus @default(open)
+  is_featured          Boolean                @default(false)
+  updated_at           DateTime               @default(now()) @updatedAt
+  teacher              Teacher?               @relation("Course_teacher_id", fields: [teacher_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  batch_course         Batch[]                @relation("Batch_course_id")
+  branchCourse_course  BranchCourse[]         @relation("BranchCourse_course_id")
+  enrollment_course    Enrollment[]           @relation("Enrollment_course_id")
+  monthlyExam_course   MonthlyExam[]          @relation("MonthlyExam_course_id")
+
+  @@index([status])
+  @@index([course_type])
+  @@index([enrollment_status])
+  @@index([teacher_id])
+  @@map("courses")
+}
+
+model DbBackup {
+  id              Int            @id @default(autoincrement())
+  filename        String         @unique @db.VarChar(255)
+  scope           DbBackupScope  @default(full)
+  tables_included String?        @db.Text
+  table_count     Int            @default(0)
+  row_count       Int            @default(0)
+  file_size       BigInt         @default(0)
+  db_size         BigInt         @default(0)
+  status          DbBackupStatus
+  error_message   String?        @db.Text
+  duration_ms     Int?
+  created_by      Int?
+  created_at      DateTime       @default(now())
+
+  @@index([created_at])
+  @@map("db_backups")
+}
+
+model EmailLog {
+  id            Int            @id @default(autoincrement())
+  recipient     String         @db.VarChar(255)
+  subject       String         @db.VarChar(255)
+  template      String?        @db.VarChar(60)
+  status        EmailLogStatus
+  error_message String?        @db.Text
+  related_type  String?        @db.VarChar(40)
+  related_id    Int?
+  student_id    Int?
+  sent_by       Int?
+  created_at    DateTime       @default(now())
+
+  @@index([created_at])
+  @@index([related_type, related_id])
+  @@index([student_id])
+  @@index([status, created_at])
+  @@map("email_logs")
+}
+
+model Enrollment {
+  id           Int                  @id @default(autoincrement())
+  student_id   Int
+  course_id    Int?
+  batch_id     Int?
+  admission_id Int?
+  course_name  String?              @db.VarChar(255)
+  batch_name   String?              @db.VarChar(150)
+  batch_type   EnrollmentBatchType?
+  fee          Decimal?             @db.Decimal(10, 2)
+  status       EnrollmentStatus     @default(active)
+  enrolled_at  DateTime?
+  approved_at  DateTime?
+  approved_by  Int?
+  notes        String?              @db.Text
+  created_at   DateTime             @default(now())
+  updated_at   DateTime             @default(now()) @updatedAt
+  admission    Admission?           @relation("Enrollment_admission_id", fields: [admission_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  batch        Batch?               @relation("Enrollment_batch_id", fields: [batch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  course       Course?              @relation("Enrollment_course_id", fields: [course_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  student      Student              @relation("Enrollment_student_id", fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([student_id])
+  @@index([course_id])
+  @@index([batch_id])
+  @@index([admission_id])
+  @@index([status])
+  @@map("enrollments")
+}
+
+model ExamAnswerFile {
+  id            Int                    @id @default(autoincrement())
+  attempt_id    Int
+  question_id   Int?
+  file_path     String                 @db.VarChar(255)
+  original_name String?                @db.VarChar(255)
+  file_type     ExamAnswerFileFileType @default(image)
+  file_size     Int                    @default(0)
+  sort_order    Int                    @default(0)
+  created_at    DateTime               @default(now())
+  attempt       ExamAttempt            @relation("ExamAnswerFile_attempt_id", fields: [attempt_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  question      ExamQuestion?          @relation("ExamAnswerFile_question_id", fields: [question_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([attempt_id])
+  @@index([question_id])
+  @@map("exam_answer_files")
+}
+
+model ExamAnswer {
+  id              Int                       @id @default(autoincrement())
+  attempt_id      Int
+  question_id     Int
+  selected_option ExamAnswerSelectedOption?
+  answer_text     String?                   @db.Text
+  is_correct      Boolean?
+  awarded_marks   Decimal?                  @db.Decimal(5, 2)
+  teacher_comment String?                   @db.Text
+  updated_at      DateTime                  @default(now()) @updatedAt
+  attempt         ExamAttempt               @relation("ExamAnswer_attempt_id", fields: [attempt_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  question        ExamQuestion              @relation("ExamAnswer_question_id", fields: [question_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([attempt_id, question_id])
+  @@index([question_id])
+  @@map("exam_answers")
+}
+
+model ExamAttempt {
+  id                     Int                    @id @default(autoincrement())
+  exam_id                Int
+  student_id             Int
+  started_at             DateTime?
+  submitted_at           DateTime?
+  submit_mode            ExamAttemptSubmitMode?
+  status                 ExamAttemptStatus      @default(in_progress)
+  mcq_score              Decimal                @default(0) @db.Decimal(6, 2)
+  cq_score               Decimal                @default(0) @db.Decimal(6, 2)
+  total_score            Decimal                @default(0) @db.Decimal(6, 2)
+  teacher_comment        String?                @db.Text
+  evaluated_by           Int?
+  evaluated_at           DateTime?
+  exam                   Exam                   @relation("ExamAttempt_exam_id", fields: [exam_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  student                Student                @relation("ExamAttempt_student_id", fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  examAnswerFile_attempt ExamAnswerFile[]       @relation("ExamAnswerFile_attempt_id")
+  examAnswer_attempt     ExamAnswer[]           @relation("ExamAnswer_attempt_id")
+
+  @@unique([exam_id, student_id])
+  @@index([student_id])
+  @@index([status])
+  @@map("exam_attempts")
+}
+
+model ExamQuestion {
+  id                      Int                        @id @default(autoincrement())
+  exam_id                 Int
+  question_type           ExamQuestionQuestionType   @default(mcq)
+  question_text           String                     @db.Text
+  question_image          String?                    @db.VarChar(255)
+  marks                   Decimal                    @default(1) @db.Decimal(5, 2)
+  sort_order              Int                        @default(0)
+  option_a                String?                    @db.VarChar(500)
+  option_b                String?                    @db.VarChar(500)
+  option_c                String?                    @db.VarChar(500)
+  option_d                String?                    @db.VarChar(500)
+  correct_option          ExamQuestionCorrectOption?
+  created_at              DateTime                   @default(now())
+  exam                    Exam                       @relation("ExamQuestion_exam_id", fields: [exam_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  examAnswerFile_question ExamAnswerFile[]           @relation("ExamAnswerFile_question_id")
+  examAnswer_question     ExamAnswer[]               @relation("ExamAnswer_question_id")
+
+  @@index([exam_id])
+  @@index([exam_id, sort_order])
+  @@map("exam_questions")
+}
+
+model ExamResult {
+  id              Int                 @id @default(autoincrement())
+  student_id      Int
+  exam_name       String              @db.VarChar(255)
+  subject         String              @db.VarChar(255)
+  marks_obtained  Decimal             @db.Decimal(5, 2)
+  total_marks     Decimal             @db.Decimal(5, 2)
+  grade           String?             @db.VarChar(10)
+  feedback        String?             @db.Text
+  exam_date       DateTime?           @db.Date
+  created_at      DateTime            @default(now())
+  monthly_exam_id Int?
+  exam_subject_id Int?
+  is_absent       Boolean             @default(false)
+  entered_by      Int?
+  updated_at      DateTime?           @updatedAt
+  student         Student             @relation("ExamResult_student_id", fields: [student_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  exam_subject    MonthlyExamSubject? @relation("ExamResult_exam_subject_id", fields: [exam_subject_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  monthly_exam    MonthlyExam?        @relation("ExamResult_monthly_exam_id", fields: [monthly_exam_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([exam_subject_id, student_id])
+  @@index([student_id])
+  @@index([monthly_exam_id])
+  @@index([exam_date])
+  @@map("exam_results")
+}
+
+model Exam {
+  id                Int               @id @default(autoincrement())
+  title             String            @db.VarChar(255)
+  exam_type         ExamExamType      @default(mcq)
+  subject           String            @db.VarChar(150)
+  batch             String?           @db.VarChar(150)
+  course            String?           @db.VarChar(150)
+  teacher_id        Int?
+  instructions      String?           @db.Text
+  total_marks       Decimal           @default(0) @db.Decimal(6, 2)
+  pass_marks        Decimal           @default(0) @db.Decimal(6, 2)
+  duration_minutes  Int               @default(60)
+  start_datetime    DateTime
+  end_datetime      DateTime
+  negative_marking  Decimal           @default(0) @db.Decimal(4, 2)
+  allow_file_upload Boolean           @default(true)
+  status            ExamStatus        @default(draft)
+  result_published  Boolean           @default(false)
+  created_by_type   ExamCreatedByType @default(admin)
+  created_by        Int?
+  created_at        DateTime          @default(now())
+  updated_at        DateTime          @default(now()) @updatedAt
+  branch_id         Int?
+  branch            Branch?           @relation("Exam_branch_id", fields: [branch_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  teacher           Teacher?          @relation("Exam_teacher_id", fields: [teacher_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  examAttempt_exam  ExamAttempt[]     @relation("ExamAttempt_exam_id")
+  examQuestion_exam ExamQuestion[]    @relation("ExamQuestion_exam_id")
+
+  @@index([batch])
+  @@index([subject])
+  @@index([status])
+  @@index([start_datetime, end_datetime])
+  @@index([teacher_id])
+  @@index([branch_id])
+  @@map("exams")
+}
+
+model FeeDiscount {
+  id            Int                     @id @default(autoincrement())
+  student_id    Int
+  discount_type FeeDiscountDiscountType @default(fixed)
+  value         Decimal                 @db.Decimal(10, 2)
+  applies_to    String                  @default("monthly") @db.VarChar(20)
+  reason        String?                 @db.VarChar(255)
+  starts_on     DateTime?               @db.Date
+  ends_on       DateTime?               @db.Date
+  is_active     Boolean                 @default(true)
+  created_by    Int?
+  created_at    DateTime                @default(now())
+  updated_at    DateTime                @default(now()) @updatedAt
+  student       Student                 @relation("FeeDiscount_student_id", fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([student_id, is_active])
+  @@map("fee_discounts")
+}
+
+model FeeReminder {
+  id         Int                @id @default(autoincrement())
+  student_id Int
+  channel    FeeReminderChannel @default(email)
+  recipient  String?            @db.VarChar(255)
+  due_amount Decimal            @default(0) @db.Decimal(10, 2)
+  status     FeeReminderStatus
+  error      String?            @db.VarChar(255)
+  sent_by    Int?
+  created_at DateTime           @default(now())
+  student    Student            @relation("FeeReminder_student_id", fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([student_id, channel, status, created_at])
+  @@index([created_at])
+  @@map("fee_reminders")
+}
+
+model Feedback {
+  id          Int             @id @default(autoincrement())
+  name        String          @db.VarChar(255)
+  course_name String          @db.VarChar(255)
+  rating      Int
+  feedback    String          @db.Text
+  status      FeedbackStatus? @default(pending)
+  created_at  DateTime        @default(now())
+
+  @@map("feedback")
+}
+
+model Gallery {
+  id          Int            @id @default(autoincrement())
+  title       String         @db.VarChar(255)
+  description String?        @db.Text
+  category    String         @db.VarChar(100)
+  category_id Int?
+  image       String         @db.VarChar(255)
+  event_date  DateTime?      @db.Date
+  featured    Boolean?       @default(false)
+  status      GalleryStatus? @default(active)
+  created_at  DateTime       @default(now())
+  sort_order  Int            @default(0)
+
+  @@index([category])
+  @@index([status])
+  @@index([featured])
+  @@index([created_at])
+  @@index([category_id])
+  @@map("gallery")
+}
+
+model GalleryCategory {
+  id          Int                   @id @default(autoincrement())
+  name        String                @unique @db.VarChar(150)
+  slug        String                @unique @db.VarChar(160)
+  description String?               @db.Text
+  cover_image String?               @db.VarChar(255)
+  sort_order  Int                   @default(0)
+  status      GalleryCategoryStatus @default(active)
+  created_at  DateTime              @default(now())
+  updated_at  DateTime              @default(now()) @updatedAt
+
+  @@index([status])
+  @@index([sort_order])
+  @@map("gallery_categories")
+}
+
+model Gift {
+  id             Int      @id @default(autoincrement())
+  name           String   @db.VarChar(150)
+  name_bn        String?  @db.VarChar(150)
+  description    String?  @db.VarChar(500)
+  description_bn String?  @db.VarChar(500)
+  image          String?  @db.VarChar(255)
+  sort_order     Int      @default(0)
+  is_active      Boolean  @default(true)
+  created_by     Int?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @default(now()) @updatedAt
+
+  @@index([is_active, sort_order])
+  @@map("gifts")
+}
+
+model GuardianStudent {
+  id          Int      @id @default(autoincrement())
+  guardian_id Int
+  student_id  Int
+  relation    String?  @db.VarChar(30)
+  created_at  DateTime @default(now())
+  guardian    Guardian @relation("GuardianStudent_guardian_id", fields: [guardian_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  student     Student  @relation("GuardianStudent_student_id", fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([guardian_id, student_id])
+  @@index([student_id])
+  @@map("guardian_students")
+}
+
+model Guardian {
+  id                       Int               @id @default(autoincrement())
+  phone                    String            @unique @db.VarChar(20)
+  name                     String?           @db.VarChar(255)
+  email                    String?           @db.VarChar(255)
+  password                 String            @db.VarChar(255)
+  must_change_password     Boolean           @default(true)
+  status                   GuardianStatus    @default(active)
+  last_login               DateTime?
+  created_by               Int?
+  created_at               DateTime          @default(now())
+  updated_at               DateTime          @default(now()) @updatedAt
+  guardianStudent_guardian GuardianStudent[] @relation("GuardianStudent_guardian_id")
+
+  @@index([status])
+  @@map("guardians")
+}
+
+model Inquiry {
+  id             Int           @id @default(autoincrement())
+  name           String        @db.VarChar(100)
+  phone          String        @db.VarChar(20)
+  course_id      Int?
+  course_name    String?       @db.VarChar(255)
+  preferred_time String?       @db.VarChar(20)
+  message        String?       @db.Text
+  source         String        @default("page") @db.VarChar(30)
+  status         InquiryStatus @default(new)
+  admin_note     String?       @db.Text
+  follow_up_date DateTime?     @db.Date
+  called_at      DateTime?
+  admitted_at    DateTime?
+  handled_by     Int?
+  admission_id   Int?
+  student_id     Int?
+  lang           String?       @db.VarChar(5)
+  ip             String?       @db.VarChar(45)
+  created_at     DateTime      @default(now())
+  updated_at     DateTime      @default(now()) @updatedAt
+
+  @@index([status, created_at])
+  @@index([phone])
+  @@index([ip, created_at])
+  @@map("inquiries")
+}
+
+model InstallmentPlan {
+  id              Int                   @id @default(autoincrement())
+  student_id      Int
+  enrollment_id   Int?
+  title           String                @db.VarChar(150)
+  total_amount    Decimal               @db.Decimal(10, 2)
+  installments    Int
+  first_due_date  DateTime              @db.Date
+  interval_months Int                   @default(1)
+  note            String?               @db.Text
+  status          InstallmentPlanStatus @default(active)
+  created_by      Int?
+  created_at      DateTime              @default(now())
+  updated_at      DateTime              @default(now()) @updatedAt
+  student         Student               @relation("InstallmentPlan_student_id", fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([student_id])
+  @@index([status])
+  @@map("installment_plans")
+}
+
+model LiveClassMaterial {
+  id               Int                             @id @default(autoincrement())
+  live_class_id    Int
+  title            String                          @db.VarChar(255)
+  file_path        String                          @db.VarChar(255)
+  file_type        String?                         @db.VarChar(20)
+  file_size        Int?                            @default(0)
+  uploaded_by_type LiveClassMaterialUploadedByType @default(teacher)
+  uploaded_by      Int?
+  created_at       DateTime                        @default(now())
+  live_class       LiveClass                       @relation("LiveClassMaterial_live_class_id", fields: [live_class_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([live_class_id])
+  @@map("live_class_materials")
+}
+
+model LiveClass {
+  id                           Int                    @id @default(autoincrement())
+  subject                      String                 @db.VarChar(150)
+  topic                        String?                @db.VarChar(255)
+  teacher_id                   Int?
+  teacher_name                 String?                @db.VarChar(255)
+  batch                        String?                @db.VarChar(150)
+  course                       String?                @db.VarChar(150)
+  class_date                   DateTime               @db.Date
+  start_time                   DateTime               @db.Time(0)
+  duration_minutes             Int                    @default(60)
+  description                  String?                @db.Text
+  meet_url                     String?                @db.VarChar(500)
+  status                       LiveClassStatus        @default(scheduled)
+  created_by_type              LiveClassCreatedByType @default(admin)
+  created_by                   Int?
+  created_at                   DateTime               @default(now())
+  updated_at                   DateTime               @default(now()) @updatedAt
+  batch_id                     Int?
+  class_mode                   LiveClassClassMode     @default(online)
+  provider                     String?                @db.VarChar(50)
+  external_id                  String?                @db.VarChar(191)
+  branch_id                    Int?
+  branch                       Branch?                @relation("LiveClass_branch_id", fields: [branch_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  teacher                      Teacher?               @relation("LiveClass_teacher_id", fields: [teacher_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  liveClassMaterial_live_class LiveClassMaterial[]    @relation("LiveClassMaterial_live_class_id")
+
+  @@index([class_date])
+  @@index([batch])
+  @@index([status])
+  @@index([teacher_id])
+  @@index([batch_id])
+  @@index([status, course])
+  @@index([branch_id])
+  @@index([teacher_id, class_date])
+  @@map("live_classes")
+}
+
+model LoginAttempt {
+  id              Int      @id @default(autoincrement())
+  scope           String   @db.VarChar(20)
+  identifier_hash String   @db.Char(64)
+  ip              String   @db.VarChar(45)
+  attempted_at    DateTime
+
+  @@index([scope, identifier_hash, attempted_at])
+  @@index([ip, attempted_at])
+  @@map("login_attempts")
+}
+
+model MonthlyExamSubject {
+  id                      Int          @id @default(autoincrement())
+  exam_id                 Int
+  subject_id              Int?
+  subject_name            String       @db.VarChar(150)
+  subject_name_bn         String?      @db.VarChar(150)
+  full_marks              Decimal      @default(100) @db.Decimal(6, 2)
+  pass_marks              Decimal      @default(33) @db.Decimal(6, 2)
+  sort_order              Int          @default(0)
+  exam                    MonthlyExam  @relation("MonthlyExamSubject_exam_id", fields: [exam_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  subject                 Subject?     @relation("MonthlyExamSubject_subject_id", fields: [subject_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  examResult_exam_subject ExamResult[] @relation("ExamResult_exam_subject_id")
+
+  @@unique([exam_id, subject_name])
+  @@index([subject_id])
+  @@map("monthly_exam_subjects")
+}
+
+model MonthlyExam {
+  id                      Int                  @id @default(autoincrement())
+  title                   String               @db.VarChar(255)
+  title_bn                String?              @db.VarChar(255)
+  exam_month              String               @db.Char(7)
+  course_id               Int?
+  batch_id                Int?
+  exam_date               DateTime?            @db.Date
+  total_marks             Decimal              @default(0) @db.Decimal(8, 2)
+  full_marks              Decimal              @default(100) @db.Decimal(6, 2)
+  pass_marks              Decimal              @default(33) @db.Decimal(6, 2)
+  show_position           Boolean              @default(true)
+  status                  MonthlyExamStatus    @default(draft)
+  published_at            DateTime?
+  remarks                 String?              @db.Text
+  created_by              Int?
+  created_at              DateTime             @default(now())
+  updated_at              DateTime             @default(now()) @updatedAt
+  batch                   Batch?               @relation("MonthlyExam_batch_id", fields: [batch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  course                  Course?              @relation("MonthlyExam_course_id", fields: [course_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  examResult_monthly_exam ExamResult[]         @relation("ExamResult_monthly_exam_id")
+  monthlyExamSubject_exam MonthlyExamSubject[] @relation("MonthlyExamSubject_exam_id")
+
+  @@index([exam_month])
+  @@index([course_id])
+  @@index([batch_id])
+  @@index([status])
+  @@map("monthly_exams")
+}
+
+model NoteEmailLog {
+  id            Int                 @id @default(autoincrement())
+  note_id       Int
+  student_id    Int
+  student_email String?             @db.VarChar(255)
+  status        NoteEmailLogStatus? @default(failed)
+  error_message String?             @db.Text
+  sent_at       DateTime            @default(now())
+
+  @@index([note_id, status])
+  @@index([sent_at])
+  @@map("note_email_logs")
+}
+
+model Notice {
+  id          Int           @id @default(autoincrement())
+  title       String        @db.VarChar(255)
+  description String        @db.Text
+  status      NoticeStatus? @default(active)
+  created_at  DateTime      @default(now())
+  updated_at  DateTime      @default(now()) @updatedAt
+  branch_id   Int?
+  branch      Branch?       @relation("Notice_branch_id", fields: [branch_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([status, created_at])
+  @@index([branch_id, status, created_at])
+  @@map("notice")
+}
+
+model NotificationLog {
+  id         Int                 @id @default(autoincrement())
+  student_id Int
+  type       NotificationLogType
+  message    String              @db.Text
+  sent_at    DateTime            @default(now())
+  student    Student             @relation("NotificationLog_student_id", fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([student_id])
+  @@map("notification_logs")
+}
+
+model Notification {
+  id         Int                  @id @default(autoincrement())
+  user_type  NotificationUserType
+  user_id    Int
+  title      String               @db.VarChar(255)
+  message    String?              @db.Text
+  link       String?              @db.VarChar(255)
+  icon       String?              @default("bell") @db.VarChar(50)
+  is_read    Boolean              @default(false)
+  created_at DateTime             @default(now())
+
+  @@index([user_type, user_id, is_read])
+  @@index([created_at])
+  @@map("notifications")
+}
+
+model PasswordReset {
+  id         Int                   @id @default(autoincrement())
+  user_type  PasswordResetUserType
+  user_id    Int
+  email      String                @db.VarChar(255)
+  token_hash String                @unique @db.Char(64)
+  expires_at DateTime
+  used_at    DateTime?
+  request_ip String?               @db.VarChar(45)
+  created_at DateTime              @default(now())
+
+  @@index([user_type, user_id])
+  @@index([expires_at])
+  @@map("password_resets")
+}
+
+model Payment {
+  id                  Int                   @id @default(autoincrement())
+  student_id          Int
+  amount              Decimal               @db.Decimal(10, 2)
+  payment_month       String                @db.VarChar(20)
+  payment_status      PaymentPaymentStatus? @default(unpaid)
+  payment_date        DateTime              @default(now())
+  due_amount          Decimal               @default(0) @db.Decimal(10, 0)
+  receipt_number      String?               @db.VarChar(50)
+  payment_method      String                @default("Cash") @db.VarChar(30)
+  notes               String?               @db.Text
+  transaction_id      String?               @db.VarChar(100)
+  admission_id        Int?
+  enrollment_id       Int?
+  fee_type            String?               @db.VarChar(20)
+  due_date            DateTime?             @db.Date
+  original_amount     Decimal?              @db.Decimal(10, 2)
+  discount_amount     Decimal?              @db.Decimal(10, 2)
+  installment_plan_id Int?
+  installment_no      Int?
+  parent_payment_id   Int?
+  created_by          Int?
+  branch_id           Int?
+  branch              Branch?               @relation("Payment_branch_id", fields: [branch_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  student             Student               @relation("Payment_student_id", fields: [student_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@index([admission_id])
+  @@index([enrollment_id])
+  @@index([payment_date])
+  @@index([payment_status, due_date])
+  @@index([student_id, payment_month])
+  @@index([installment_plan_id])
+  @@index([parent_payment_id])
+  @@index([payment_status, payment_date])
+  @@index([branch_id, payment_status, payment_date])
+  @@map("payments")
+}
+
+model PrintableDocument {
+  id              Int      @id @default(autoincrement())
+  title           String   @db.VarChar(200)
+  category        String   @default("general") @db.VarChar(80)
+  description     String?  @db.Text
+  image_path      String   @db.VarChar(255)
+  thumb_path      String?  @db.VarChar(255)
+  image_width     Int      @default(0)
+  image_height    Int      @default(0)
+  student_visible Boolean  @default(false)
+  created_by      Int?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @default(now()) @updatedAt
+
+  @@index([category])
+  @@index([created_at])
+  @@map("printable_documents")
+}
+
+model Promotion {
+  id               Int                      @id @default(autoincrement())
+  title            String                   @db.VarChar(255)
+  title_bn         String?                  @db.VarChar(255)
+  description      String?                  @db.Text
+  description_bn   String?                  @db.Text
+  image            String?                  @db.VarChar(255)
+  offer_text       String?                  @db.VarChar(60)
+  offer_text_bn    String?                  @db.VarChar(60)
+  discount_percent Decimal?                 @db.Decimal(5, 2)
+  button_text      String?                  @db.VarChar(80)
+  button_text_bn   String?                  @db.VarChar(80)
+  button_url       String?                  @db.VarChar(500)
+  display_position PromotionDisplayPosition @default(home_section)
+  style            PromotionStyle           @default(green)
+  sort_order       Int                      @default(0)
+  is_active        Boolean                  @default(true)
+  start_at         DateTime?
+  end_at           DateTime?
+  created_by       Int?
+  created_at       DateTime                 @default(now())
+  updated_at       DateTime                 @default(now()) @updatedAt
+
+  @@index([is_active, display_position])
+  @@index([start_at, end_at])
+  @@map("promotions")
+}
+
+model RecordedClass {
+  id               Int                 @id @default(autoincrement())
+  title            String              @db.VarChar(255)
+  description      String?             @db.Text
+  subject          String?             @db.VarChar(150)
+  course           String?             @db.VarChar(150)
+  batch            String?             @db.VarChar(150)
+  batch_id         Int?
+  branch_id        Int?
+  teacher_id       Int?
+  teacher_name     String?             @db.VarChar(255)
+  class_date       DateTime?           @db.Date
+  duration_minutes Int?
+  drive_file_id    String              @db.VarChar(128)
+  status           RecordedClassStatus @default(draft)
+  created_by       Int?
+  created_at       DateTime            @default(now())
+  updated_at       DateTime            @default(now()) @updatedAt
+  batch_ref        Batch?              @relation("RecordedClass_batch_id", fields: [batch_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  branch           Branch?             @relation("RecordedClass_branch_id", fields: [branch_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  teacher          Teacher?            @relation("RecordedClass_teacher_id", fields: [teacher_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  @@index([status, class_date])
+  @@index([batch_id])
+  @@index([branch_id])
+  @@index([teacher_id])
+  @@map("recorded_classes")
+}
+
+model SiteSetting {
+  setting_key   String   @id @db.VarChar(100)
+  setting_value String?  @db.Text
+  updated_at    DateTime @default(now()) @updatedAt
+
+  @@map("site_settings")
+}
+
+model SmsLog {
+  id         Int      @id @default(autoincrement())
+  student_id Int
+  mobile     String   @db.VarChar(20)
+  message    String   @db.Text
+  status     String   @db.VarChar(20)
+  sent_at    DateTime @default(now())
+  student    Student  @relation("SmsLog_student_id", fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([student_id])
+  @@map("sms_logs")
+}
+
+model StudentIdSequence {
+  year        Int      @id
+  last_number Int      @default(0)
+  updated_at  DateTime @default(now()) @updatedAt
+
+  @@map("student_id_sequence")
+}
+
+model StudentLogin {
+  id                   Int       @id @default(autoincrement())
+  student_id           Int
+  username             String    @unique @db.VarChar(100)
+  password             String    @db.VarChar(255)
+  last_login           DateTime?
+  created_at           DateTime  @default(now())
+  must_change_password Boolean   @default(false)
+  student              Student   @relation("StudentLogin_student_id", fields: [student_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([student_id])
+  @@map("student_login")
+}
+
+model Student {
+  id                           Int                    @id @default(autoincrement())
+  student_id_no                String?                @unique @db.VarChar(30)
+  name                         String                 @db.VarChar(255)
+  name_bn                      String?                @db.VarChar(255)
+  phone                        String                 @unique @db.VarChar(20)
+  guardian_phone               String?                @db.VarChar(20)
+  email                        String                 @db.VarChar(255)
+  institution                  String                 @db.VarChar(255)
+  address                      String                 @db.Text
+  course                       String                 @db.VarChar(100)
+  image                        String                 @db.VarChar(255)
+  status                       StudentStatus?         @default(pending)
+  created_at                   DateTime               @default(now())
+  student_status               StudentStudentStatus   @default(Active)
+  batch                        String?                @db.VarChar(100)
+  roll_number                  String?                @db.VarChar(20)
+  father_name                  String?                @db.VarChar(255)
+  mother_name                  String?                @db.VarChar(255)
+  date_of_birth                DateTime?              @db.Date
+  gender                       StudentGender?
+  batch_id                     Int?
+  id_card_issued_at            DateTime?
+  emergency_contact            String?                @db.VarChar(30)
+  blood_group                  String?                @db.VarChar(5)
+  id_card_valid_until          DateTime?              @db.Date
+  updated_at                   DateTime               @default(now()) @updatedAt
+  branch_id                    Int?
+  branch                       Branch?                @relation("Student_branch_id", fields: [branch_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  aiConversation_student       AiConversation[]       @relation("AiConversation_student_id")
+  aiMessage_student            AiMessage[]            @relation("AiMessage_student_id")
+  assignmentSubmission_student AssignmentSubmission[] @relation("AssignmentSubmission_student_id")
+  attendance_student           Attendance[]           @relation("Attendance_student_id")
+  enrollment_student           Enrollment[]           @relation("Enrollment_student_id")
+  examAttempt_student          ExamAttempt[]          @relation("ExamAttempt_student_id")
+  examResult_student           ExamResult[]           @relation("ExamResult_student_id")
+  feeDiscount_student          FeeDiscount[]          @relation("FeeDiscount_student_id")
+  feeReminder_student          FeeReminder[]          @relation("FeeReminder_student_id")
+  guardianStudent_student      GuardianStudent[]      @relation("GuardianStudent_student_id")
+  installmentPlan_student      InstallmentPlan[]      @relation("InstallmentPlan_student_id")
+  notificationLog_student      NotificationLog[]      @relation("NotificationLog_student_id")
+  payment_student              Payment[]              @relation("Payment_student_id")
+  smsLog_student               SmsLog[]               @relation("SmsLog_student_id")
+  studentLogin_student         StudentLogin[]         @relation("StudentLogin_student_id")
+
+  @@index([batch])
+  @@index([batch_id])
+  @@index([name_bn])
+  @@index([created_at])
+  @@index([email])
+  @@index([branch_id, status, student_status])
+  @@map("students")
+}
+
+model StudyMaterial {
+  id              Int      @id @default(autoincrement())
+  title           String   @db.VarChar(255)
+  description     String?  @db.Text
+  file_path       String   @db.VarChar(500)
+  file_type       String   @db.VarChar(50)
+  course          String   @db.VarChar(255)
+  batch           String?  @db.VarChar(100)
+  uploaded_by     Int
+  created_at      DateTime @default(now())
+  branch_id       Int?
+  branch          Branch?  @relation("StudyMaterial_branch_id", fields: [branch_id], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  uploaded_by_ref Admin    @relation("StudyMaterial_uploaded_by", fields: [uploaded_by], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([uploaded_by])
+  @@index([course, created_at])
+  @@index([branch_id])
+  @@map("study_materials")
+}
+
+model Subject {
+  id                         Int                  @id @default(autoincrement())
+  name                       String               @unique @db.VarChar(150)
+  name_bn                    String?              @db.VarChar(150)
+  code                       String?              @db.VarChar(30)
+  sort_order                 Int                  @default(0)
+  status                     SubjectStatus        @default(active)
+  created_at                 DateTime             @default(now())
+  updated_at                 DateTime             @default(now()) @updatedAt
+  monthlyExamSubject_subject MonthlyExamSubject[] @relation("MonthlyExamSubject_subject_id")
+
+  @@index([status])
+  @@map("subjects")
+}
+
+model TeacherBatch {
+  id         Int      @id @default(autoincrement())
+  teacher_id Int
+  batch      String   @db.VarChar(150)
+  created_at DateTime @default(now())
+  teacher    Teacher  @relation("TeacherBatch_teacher_id", fields: [teacher_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([teacher_id, batch])
+  @@map("teacher_batches")
+}
+
+model TeacherSubject {
+  id         Int      @id @default(autoincrement())
+  teacher_id Int
+  subject    String   @db.VarChar(150)
+  created_at DateTime @default(now())
+  teacher    Teacher  @relation("TeacherSubject_teacher_id", fields: [teacher_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([teacher_id, subject])
+  @@map("teacher_subjects")
+}
+
+model Teacher {
+  id                     Int              @id @default(autoincrement())
+  name                   String           @db.VarChar(255)
+  name_bn                String?          @db.VarChar(255)
+  email                  String           @unique @db.VarChar(255)
+  phone                  String?          @db.VarChar(30)
+  password_hash          String           @db.VarChar(255)
+  designation            String?          @db.VarChar(150)
+  designation_bn         String?          @db.VarChar(150)
+  qualification          String?          @db.VarChar(255)
+  qualification_bn       String?          @db.VarChar(255)
+  experience             String?          @db.VarChar(200)
+  experience_bn          String?          @db.VarChar(200)
+  photo                  String?          @db.VarChar(255)
+  bio                    String?          @db.Text
+  bio_bn                 String?          @db.Text
+  status                 TeacherStatus    @default(active)
+  last_login             DateTime?
+  created_at             DateTime         @default(now())
+  updated_at             DateTime         @default(now()) @updatedAt
+  sort_order             Int              @default(0)
+  show_on_website        Boolean          @default(false)
+  branchTeacher_teacher  BranchTeacher[]  @relation("BranchTeacher_teacher_id")
+  course_teacher         Course[]         @relation("Course_teacher_id")
+  exam_teacher           Exam[]           @relation("Exam_teacher_id")
+  liveClass_teacher      LiveClass[]      @relation("LiveClass_teacher_id")
+  recordedClass_teacher  RecordedClass[]  @relation("RecordedClass_teacher_id")
+  teacherBatch_teacher   TeacherBatch[]   @relation("TeacherBatch_teacher_id")
+  teacherSubject_teacher TeacherSubject[] @relation("TeacherSubject_teacher_id")
+
+  @@index([status])
+  @@index([show_on_website, status, sort_order])
+  @@map("teachers")
+}
+
+model TrialClass {
+  id           Int               @id @default(autoincrement())
+  title        String            @db.VarChar(255)
+  teacher_name String?           @db.VarChar(255)
+  course_name  String?           @db.VarChar(255)
+  description  String?           @db.Text
+  thumbnail    String?           @db.VarChar(255)
+  video_url    String?           @db.VarChar(500)
+  status       TrialClassStatus? @default(active)
+  created_at   DateTime          @default(now())
+  updated_at   DateTime          @default(now()) @updatedAt
+
+  @@map("trial_classes")
+}
+
+model UserPreference {
+  id         Int                    @id @default(autoincrement())
+  user_type  UserPreferenceUserType
+  user_id    Int
+  theme      UserPreferenceTheme    @default(light)
+  updated_at DateTime               @default(now()) @updatedAt
+  lang       String?                @db.VarChar(5)
+
+  @@unique([user_type, user_id])
+  @@map("user_preferences")
+}
+
+model VisitorLog {
+  id                 Int                  @id @default(autoincrement())
+  visitor_identifier String               @db.Char(32)
+  session_id         String               @db.Char(32)
+  page_url           String               @db.VarChar(191)
+  visit_date         DateTime             @db.Date
+  visit_time         DateTime             @db.Time(0)
+  device_type        VisitorLogDeviceType @default(desktop)
+  browser            String               @default("Other") @db.VarChar(30)
+  is_new_visitor     Boolean              @default(false)
+  created_at         DateTime
+
+  @@index([visit_date, visitor_identifier, session_id, is_new_visitor])
+  @@index([visit_date, page_url])
+  @@index([created_at, visitor_identifier])
+  @@map("visitor_logs")
+}
+
+model VisitorMonthlySummary {
+  month_start      DateTime  @id @db.Date
+  page_views       Int       @default(0)
+  visits           Int       @default(0)
+  unique_visitors  Int       @default(0)
+  new_visitors     Int       @default(0)
+  active_days      Int       @default(0)
+  avg_daily_visits Decimal   @default(0) @db.Decimal(10, 2)
+  peak_date        DateTime? @db.Date
+  peak_visits      Int       @default(0)
+  top_page         String?   @db.VarChar(191)
+  top_page_views   Int       @default(0)
+  created_at       DateTime  @default(now())
+
+  @@map("visitor_monthly_summary")
+}
+
+enum AdminRole {
+  super_admin
+  branch_admin
+}
+
+enum AdminStatus {
+  active
+  locked
+}
+
+enum AdmissionBatchType {
+  online
+  offline
+}
+
+enum AdmissionGender {
+  male
+  female
+  other
+}
+
+enum AdmissionPaymentMethod {
+  bkash
+  nagad
+}
+
+enum AdmissionStatus {
+  pending
+  under_review
+  payment_verified
+  payment_rejected
+  approved
+  rejected
+}
+
+enum AiMessageRole {
+  user
+  model
+  blocked
+}
+
+enum AttendanceStatus {
+  present
+  absent
+  late
+  half_day
+}
+
+enum AuthRememberTokenUserType {
+  admin
+  teacher
+  student
+  guardian
+}
+
+enum BatchBatchType {
+  online
+  offline
+}
+
+enum BatchStatus {
+  active
+  inactive
+}
+
+enum BranchCourseStatus {
+  active
+  inactive
+}
+
+enum BranchStatus {
+  active
+  inactive
+}
+
+enum CourseCourseType {
+  online
+  offline
+  hybrid
+}
+
+enum CourseEnrollmentStatus {
+  open
+  closed
+}
+
+enum CourseStatus {
+  active
+  inactive
+}
+
+enum DbBackupScope {
+  full
+  selected
+}
+
+enum DbBackupStatus {
+  success
+  failed
+}
+
+enum EmailLogStatus {
+  sent
+  failed
+}
+
+enum EnrollmentBatchType {
+  online
+  offline
+}
+
+enum EnrollmentStatus {
+  active
+  completed
+  cancelled
+}
+
+enum ExamAnswerFileFileType {
+  image
+  pdf
+}
+
+enum ExamAnswerSelectedOption {
+  a
+  b
+  c
+  d
+}
+
+enum ExamAttemptStatus {
+  in_progress
+  submitted
+  evaluated
+}
+
+enum ExamAttemptSubmitMode {
+  manual
+  auto
+}
+
+enum ExamCreatedByType {
+  admin
+  teacher
+}
+
+enum ExamExamType {
+  mcq
+  cq
+  mixed
+}
+
+enum ExamQuestionCorrectOption {
+  a
+  b
+  c
+  d
+}
+
+enum ExamQuestionQuestionType {
+  mcq
+  cq
+}
+
+enum ExamStatus {
+  draft
+  published
+  cancelled
+}
+
+enum FeeDiscountDiscountType {
+  fixed
+  percent
+}
+
+enum FeeReminderChannel {
+  email
+  whatsapp
+}
+
+enum FeeReminderStatus {
+  sent
+  failed
+  skipped
+}
+
+enum FeedbackStatus {
+  pending
+  approved
+}
+
+enum GalleryCategoryStatus {
+  active
+  hidden
+}
+
+enum GalleryStatus {
+  active
+  inactive
+}
+
+enum GuardianStatus {
+  active
+  inactive
+}
+
+enum InquiryStatus {
+  new
+  called
+  admitted
+  not_interested
+}
+
+enum InstallmentPlanStatus {
+  active
+  completed
+  cancelled
+}
+
+enum LiveClassClassMode {
+  online
+  offline
+}
+
+enum LiveClassCreatedByType {
+  admin
+  teacher
+}
+
+enum LiveClassMaterialUploadedByType {
+  admin
+  teacher
+}
+
+enum LiveClassStatus {
+  scheduled
+  completed
+  cancelled
+}
+
+enum MonthlyExamStatus {
+  draft
+  published
+}
+
+enum NoteEmailLogStatus {
+  sent
+  failed
+}
+
+enum NoticeStatus {
+  active
+  inactive
+}
+
+enum NotificationLogType {
+  email
+  sms
+}
+
+enum NotificationUserType {
+  admin
+  teacher
+  student
+  guardian
+}
+
+enum PasswordResetUserType {
+  admin
+  teacher
+  student
+  guardian
+}
+
+enum PaymentPaymentStatus {
+  paid
+  unpaid
+}
+
+enum PromotionDisplayPosition {
+  top_bar
+  hero
+  home_section
+  popup
+}
+
+enum PromotionStyle {
+  green
+  yellow
+  dark
+  light
+}
+
+enum RecordedClassStatus {
+  draft
+  published
+}
+
+enum StudentGender {
+  male
+  female
+  other
+}
+
+enum StudentStatus {
+  pending
+  approved
+}
+
+enum StudentStudentStatus {
+  Active
+  Inactive
+}
+
+enum SubjectStatus {
+  active
+  inactive
+}
+
+enum TeacherStatus {
+  active
+  inactive
+}
+
+enum TrialClassStatus {
+  active
+  inactive
+}
+
+enum UserPreferenceTheme {
+  light
+  dark
+}
+
+enum UserPreferenceUserType {
+  admin
+  teacher
+  student
+  guardian
+}
+
+enum VisitorLogDeviceType {
+  desktop
+  mobile
+  tablet
+}

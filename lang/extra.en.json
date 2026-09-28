@@ -1,0 +1,6 @@
+{
+  "logout.confirm_body": "You will be signed out on this device. If you are signed in elsewhere, that stays as it is.",
+  "common.page": "Page",
+  "common.of": "of",
+  "common.showing": "Showing {from}–{to} of {total}"
+}

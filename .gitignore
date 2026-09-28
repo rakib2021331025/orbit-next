@@ -1,0 +1,17 @@
+node_modules/
+.next/
+out/
+build/
+.env
+.env.local
+.env*.local
+*.log
+.DS_Store
+.vercel
+next-env.d.ts
+/prisma/dev.db*
+
+# Any copy of an env file holds real credentials.
+.env*
+!.env.example
+*.tsbuildinfo
